@@ -14,11 +14,15 @@ import subprocess
 import random
 import shutil
 from pathlib import Path
+from clip_selector import select_and_extract, SCENEDETECT_AVAILABLE
 
 FOOTAGE_ROOT = Path("/home/papi/footage")
 MUSIC_ROOT   = Path("/home/papi/music")
 FONT_PATH    = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-WIDTH, HEIGHT = 478, 850
+WIDTH, HEIGHT = 1080, 1920
+ENCODE_PRESET = "medium"
+ENCODE_CRF = "18"
+OUTPUT_FPS = "30"
 
 def get_duration(path):
     r = subprocess.run([
@@ -65,10 +69,14 @@ def extract_segment(input_path, duration, output_path):
         "-i", str(input_path),
         "-t", str(duration),
         # Scale to fill 9:16, crop center
-        "-vf", f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT}",
-        "-c:v", "libx264", "-preset", "fast",
-        "-c:a", "aac", "-b:a", "128k",
-        "-r", "30",
+        "-vf", f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT},unsharp=5:5:0.5",
+        "-c:v", "libx264",
+        "-crf", "20",
+        "-preset", "medium",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "192k",
+        "-r", OUTPUT_FPS,
+        "-movflags", "+faststart",
         "-loglevel", "error",
         str(output_path)
     ]
@@ -89,8 +97,12 @@ def apply_color_grade(input_path, grade, output_path):
     cmd = [
         "ffmpeg", "-y", "-i", str(input_path),
         "-vf", vf,
-        "-c:v", "libx264", "-preset", "fast",
+        "-c:v", "libx264",
+        "-preset", ENCODE_PRESET,
+        "-crf", ENCODE_CRF,
+        "-pix_fmt", "yuv420p",
         "-c:a", "copy",
+        "-movflags", "+faststart",
         "-loglevel", "error",
         str(output_path)
     ]
@@ -131,8 +143,12 @@ def add_text_overlay(input_path, text, output_path):
     cmd = [
         "ffmpeg", "-y", "-i", str(input_path),
         "-vf", drawtext,
-        "-c:v", "libx264", "-preset", "fast",
+        "-c:v", "libx264",
+        "-preset", ENCODE_PRESET,
+        "-crf", ENCODE_CRF,
+        "-pix_fmt", "yuv420p",
         "-c:a", "copy",
+        "-movflags", "+faststart",
         "-loglevel", "error",
         str(output_path)
     ]
@@ -153,8 +169,12 @@ def apply_glitch(input_path, output_path):
     cmd = [
         "ffmpeg", "-y", "-i", str(input_path),
         "-vf", vf,
-        "-c:v", "libx264", "-preset", "fast",
+        "-c:v", "libx264",
+        "-preset", ENCODE_PRESET,
+        "-crf", ENCODE_CRF,
+        "-pix_fmt", "yuv420p",
         "-c:a", "copy",
+        "-movflags", "+faststart",
         "-loglevel", "error",
         str(output_path)
     ]
@@ -176,8 +196,12 @@ def add_watermark(input_path, output_path, text="@pipeline"):
     cmd = [
         "ffmpeg", "-y", "-i", str(input_path),
         "-vf", drawtext,
-        "-c:v", "libx264", "-preset", "fast",
+        "-c:v", "libx264",
+        "-preset", ENCODE_PRESET,
+        "-crf", ENCODE_CRF,
+        "-pix_fmt", "yuv420p",
         "-c:a", "copy",
+        "-movflags", "+faststart",
         "-loglevel", "error",
         str(output_path)
     ]
@@ -194,8 +218,12 @@ def concat_clips(clip_paths, output_path):
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0",
         "-i", str(list_file),
-        "-c:v", "libx264", "-preset", "fast",
+        "-c:v", "libx264",
+        "-preset", ENCODE_PRESET,
+        "-crf", ENCODE_CRF,
+        "-pix_fmt", "yuv420p",
         "-c:a", "aac",
+        "-movflags", "+faststart",
         "-loglevel", "error",
         str(output_path)
     ]
@@ -232,7 +260,22 @@ def find_music(music_mood):
     all_tracks = list(MUSIC_ROOT.rglob("*.mp3")) + list(MUSIC_ROOT.rglob("*.m4a"))
     return str(random.choice(all_tracks)) if all_tracks else None
 
-def assemble(brief_path, output_path):
+def assemble(
+    brief_path,
+    output_path,
+    seed=None,
+    production=False,
+    min_shot_success_rate=0.9,
+):
+    if seed is not None:
+        random.seed(seed)
+        print(f"  Seeded randomness: {seed}")
+
+    if production and not SCENEDETECT_AVAILABLE:
+        raise RuntimeError(
+            "SceneDetect is required in production mode. Install scenedetect to continue."
+        )
+
     brief = json.loads(Path(brief_path).read_text())
     shots = brief["shots"]
     niche = brief["vibe"]["niche"]
@@ -247,6 +290,7 @@ def assemble(brief_path, output_path):
     print(f"{'='*55}\n")
 
     processed_clips = []
+    last_successful_source = None
 
     for shot in shots:
         n          = shot["shot_number"]
@@ -264,14 +308,23 @@ def assemble(brief_path, output_path):
         # 1. Find source clip
         source = find_clip(niche, keyword)
         if not source:
-            print(f"    ⚠ No clip found — skipping")
-            continue
+            if last_successful_source:
+                source = last_successful_source
+                print(f"    [Fallback] No clip found for keyword; reusing previous source")
+            else:
+                print(f"    ⚠ No clip found — skipping")
+                continue
 
-        # 2. Extract segment
+        # 2. Extract segment using clip selector first, fallback to legacy random offset extraction
         seg_path = tmp / f"{n:02d}_seg.mp4"
-        if not extract_segment(source, duration, seg_path):
+        if select_and_extract(source, duration, str(seg_path)):
+            print("    [ClipSelector] scene_select_success")
+        elif extract_segment(source, duration, seg_path):
+            print("    [ClipSelector] scene_select_failed_fallback_used")
+        else:
             print(f"    ⚠ Extraction failed — skipping")
             continue
+        last_successful_source = source
 
         # 3. Colour grade
         graded_path = tmp / f"{n:02d}_graded.mp4"
@@ -296,6 +349,14 @@ def assemble(brief_path, output_path):
 
     if not processed_clips:
         print("  ✗ No clips processed.")
+        return False
+
+    shot_success_rate = len(processed_clips) / len(shots)
+    if shot_success_rate < min_shot_success_rate:
+        print(
+            f"  ✗ Shot success rate too low: {shot_success_rate:.1%} "
+            f"(required: {min_shot_success_rate:.1%})"
+        )
         return False
 
     # 6. Concatenate
@@ -326,5 +387,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--brief",  required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--production", action="store_true")
+    parser.add_argument("--min-shot-success-rate", type=float, default=0.9)
     args = parser.parse_args()
-    assemble(args.brief, args.output)
+    assemble(
+        args.brief,
+        args.output,
+        seed=args.seed,
+        production=args.production,
+        min_shot_success_rate=args.min_shot_success_rate,
+    )

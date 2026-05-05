@@ -3,6 +3,10 @@ import argparse
 import random
 from pathlib import Path
 
+WIDTH, HEIGHT = 1080, 1920
+ENCODE_PRESET = "medium"
+ENCODE_CRF = "18"
+
 try:
     from scenedetect import open_video, SceneManager
     from scenedetect.detectors import ContentDetector
@@ -62,8 +66,11 @@ def extract_clip(input_path, start_secs, duration, output_path):
         "-i", input_path,
         "-t", str(duration),
         "-c:v", "libx264",
+        "-preset", ENCODE_PRESET,
+        "-crf", ENCODE_CRF,
+        "-pix_fmt", "yuv420p",
         "-c:a", "aac",
-        "-vf", "scale=478:850:force_original_aspect_ratio=increase,crop=478:850",
+        "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
         "-movflags", "+faststart",
         "-loglevel", "error",
         output_path

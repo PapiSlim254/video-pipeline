@@ -37,7 +37,7 @@ MAX_CLIPS_PER_KEYWORD = 5                      # how many clips to pull per keyw
 MAX_DURATION_SECS     = 900                    # skip clips longer than this (60s default)
 MIN_DURATION_SECS     = 5                      # skip clips shorter than this
 VIDEO_FORMAT          = "mp4"
-PREFERRED_QUALITY = "best[height<=1080]/best"
+PREFERRED_QUALITY = "best[height>=720][height<=1080]/best[height>=480]/best"
 
 # ── INDEX HELPERS ────────────────────────────────────────────────────────────
 
@@ -111,7 +111,7 @@ def search_and_download_pexels(keyword: str, dest_dir: Path, max_clips: int) -> 
     dest_dir.mkdir(parents=True, exist_ok=True)
     headers = {"Authorization": PEXELS_API_KEY}
     url = "https://api.pexels.com/videos/search"
-    params = {"query": keyword, "orientation": "portrait", "per_page": max_clips, "size": "medium"}
+    params = {"query": keyword, "orientation": "portrait", "per_page": max_clips, "size": "large"}
 
     print(f"  [Pexels] Searching: '{keyword}'")
 
@@ -204,14 +204,16 @@ def source_footage(niche: str, keywords: list[str]):
 
         needed = MAX_CLIPS_PER_KEYWORD - len(existing)
 
-        # Source from YouTube first
-        yt_clips = search_and_download_youtube(keyword, keyword_dir, needed)
-
-        # Fill remaining from Pexels
-        still_needed = MAX_CLIPS_PER_KEYWORD - len(list(keyword_dir.glob("*.mp4")))
+        # Source from Pexels first
         px_clips = []
-        if still_needed > 0 and PEXELS_API_KEY:
-            px_clips = search_and_download_pexels(keyword, keyword_dir, still_needed)
+        if PEXELS_API_KEY:
+            px_clips = search_and_download_pexels(keyword, keyword_dir, needed)
+
+        # Fill remaining from YouTube
+        still_needed = MAX_CLIPS_PER_KEYWORD - len(list(keyword_dir.glob("*.mp4")))
+        yt_clips = []
+        if still_needed > 0:
+            yt_clips = search_and_download_youtube(keyword, keyword_dir, still_needed)
 
         # Build index entry for this keyword
         all_clips = list(keyword_dir.glob("*.mp4"))
