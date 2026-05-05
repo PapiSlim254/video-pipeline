@@ -31,13 +31,13 @@ from datetime import datetime
 
 # ── CONFIG ──────────────────────────────────────────────────────────────────
 
-FOOTAGE_ROOT   = Path("/home/cloud/footage")   # change to your preferred path
+FOOTAGE_ROOT   = Path("/home/papi/footage")   # change to your preferred path
 PEXELS_API_KEY = ""                            # add your free Pexels API key here
 MAX_CLIPS_PER_KEYWORD = 5                      # how many clips to pull per keyword
 MAX_DURATION_SECS     = 900                    # skip clips longer than this (60s default)
 MIN_DURATION_SECS     = 5                      # skip clips shorter than this
 VIDEO_FORMAT          = "mp4"
-PREFERRED_QUALITY     = "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best"
+PREFERRED_QUALITY = "best[height<=1080]/best"
 
 # ── INDEX HELPERS ────────────────────────────────────────────────────────────
 
@@ -70,7 +70,7 @@ def search_and_download_youtube(keyword: str, dest_dir: Path, max_clips: int) ->
     print(f"  [YouTube] Searching: '{keyword} cinematic'")
 
     cmd = [
-        "yt-dlp",
+        "yt-dlp", "--cookies-from-browser", "chrome",
         search_query,
         "--format", PREFERRED_QUALITY,
         "--output", str(dest_dir / "%(autonumber)s_%(id)s.%(ext)s"),
@@ -251,7 +251,7 @@ def find_clips(niche: str, keyword: str, max_results: int = 3) -> list[str]:
 
     Example:
       clips = find_clips("dark_motivation", "war soldier")
-      # returns ['/home/cloud/footage/dark_motivation/war_soldier/001_abc.mp4', ...]
+      # returns ['/home/papi/footage/dark_motivation/war_soldier/001_abc.mp4', ...]
     """
     niche_dir = FOOTAGE_ROOT / slug(niche)
     if not niche_dir.exists():

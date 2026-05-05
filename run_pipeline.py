@@ -14,14 +14,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/cloud")
+sys.path.insert(0, "/home/papi")
 from brief_engine import run_pipeline
 from footage_sourcer import source_footage
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--script", required=True)
-    parser.add_argument("--output", default="/home/cloud/output")
+    parser.add_argument("--output", default="/home/papi/output")
     args = parser.parse_args()
 
     # Step 1 — Generate brief
@@ -39,7 +39,7 @@ def main():
 
     print("\n✓ Pipeline complete.")
     print(f"  Brief  → {args.output}/brief.json")
-    print(f"  Footage → /home/cloud/footage/{niche}/")
+    print(f"  Footage → /home/papi/footage/{niche}/")
 
 if __name__ == "__main__":
     main()
